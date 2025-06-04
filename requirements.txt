@@ -1,0 +1,10 @@
+faster-whisper
+ffmpeg-python
+tk
+resemblyzer
+numpy
+torchaudio
+torch
+openai
+scikit-learn
+notion-client
