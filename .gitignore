@@ -1,3 +1,6 @@
 /cuda/bin
 /speaker_db/
 env_config.json
+/dist
+/build
+MeetingSummaryApp.spec

@@ -12,12 +12,22 @@ SPEAKER_DB = "speaker_db"
 
 def transcribe_and_identify(audio_path: str, model_size="base", num_speakers=2) -> List[Dict[str, Any]]:
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "float16" if device == "cuda" else "int8"
+    print(f"🧠 model_size: {model_size}")
     print(f"🧠 Using device: {device}")
-
+    print(f"🧠 Using compute_type: {compute_type}")
+    # GPU 메모리 사용량 출력 (optional)
+    print("CUDA available?:", torch.cuda.is_available())
+    if device == "cuda":
+        import subprocess, sys
+        subprocess.call(["nvidia-smi"], shell=True)
     # 1. faster-whisper로 전사
     print("📄 Transcribing with Faster-Whisper...")
-    model = WhisperModel(model_size, device=device, compute_type="float16" if device=="cuda" else "int8")
+    model = WhisperModel(model_size, device=device, compute_type=compute_type)
     segments, _ = model.transcribe(audio_path)
+    # 3) 모델 로드 직후 GPU 상태 확인
+    if device == "cuda":
+        subprocess.call("nvidia-smi", shell=True)
 
     segments = list(segments)  # generator -> list
     if not segments:

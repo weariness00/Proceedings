@@ -2,6 +2,7 @@ import subprocess
 import sys
 import importlib
 import tkinter as tk
+from Util import *
 
 REQUIREMENTS_FILE = "requirements.txt"
 
@@ -22,6 +23,7 @@ class InstallerUI:
 
 
 def parse_requirements(path):
+    path = get_resource_path(path)
     with open(path, "r") as f:
         for line in f:
             line = line.strip()
