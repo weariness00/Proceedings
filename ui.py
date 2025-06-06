@@ -4,14 +4,13 @@ from tkinter import filedialog, ttk, messagebox
 
 from gpt.gpt_define import gpt_env, gpt_output_dir_env
 from gpt.summarizer import summarize_meeting
-from whisper_module.transcriber import transcribe_and_identify
+from whisper_module.transcriber import Transcribe
 from whisper_module.speaker_identifier import *
 from whisper_module.speaker_manager_ui import SpeakerManagerUI
 from gpt.gpt_ui import show_gpt_settings_ui  # <-- GPT 설정 통합 UI
 from notion.NotionUI import *
 from env_config import *
 import os
-import shutil
 import time
 import notion.NotionDataBaseManager as NotionDBM
 
@@ -54,6 +53,12 @@ def set_test_frame(frame):
     model_box = ttk.Combobox(frame, textvariable=model_var, values=["tiny", "base", "medium", "large-v2"])
     model_box.pack(pady=5)
     model_box.bind("<<ComboboxSelected>>", lambda e: set_env_setting("whisper_module", "current_model", model_var.get()))
+
+    # 새로운: 화자 수 입력 영역
+    tk.Label(frame, text="2. Number of speakers:").pack(pady=5)
+    num_speakers_var = tk.IntVar(value=2)  # 기본값 2
+    num_spin = tk.Spinbox(frame, from_=1, to=10, textvariable=num_speakers_var, width=5)
+    num_spin.pack(pady=5)
 
     # 오디오 파일 선택
     tk.Label(frame, text="2. Select audio/video file:").pack(pady=5)
@@ -109,27 +114,38 @@ def set_test_frame(frame):
             messagebox.showwarning("No output folder", "Please specify where to save the transcript.")
             return
 
+        transcribe = Transcribe()
         progress_label.config(text="🔄 Transcribing... please wait.")
         frame.update()
 
         start_time = time.time()
         try:
-            results = transcribe_and_identify(file_var.get(), model_size=model_var.get(), num_speakers=2)
+            transcribe.model_name = model_var.get()
+            transcribe.speaker_count = num_speakers_var.get()
+            results = transcribe.execute(file_var.get(), chunk_length_s=300)
+            print("전사 완료")
         except Exception as e:
+            print(e)
             messagebox.showerror("Error", f"Transcription failed:\n{e}")
             return
 
-        final_output = ""
-        for seg in results:
-            final_output += f"[{seg['speaker']}] {seg['text']}\n"
+        try:
+            final_output = ""
+            for seg in results:
+                final_output += f"[{seg['speaker']}] {seg['text']}\n"
 
-        base_name = os.path.splitext(os.path.basename(file_var.get()))[0]
-        output_path = os.path.join(output_dir_var.get(), f"{base_name}_transcript.txt")
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(final_output)
+            base_name = os.path.splitext(os.path.basename(file_var.get()))[0]
+            output_path = os.path.join(output_dir_var.get(), f"{base_name}_transcript.txt")
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(final_output)
+        except Exception as e:
+            print(e)
+            messagebox.showerror("Error", f"Transcription Write failed:\n{e}")
+            return
 
         progress_label.config(text="")
         elapsed = time.time() - start_time
+        print("Transcription complete!\nSaved to: {output_path}\nTime taken: {elapse0d:.2f} seconds")
         messagebox.showinfo("Done",f"Transcription complete!\nSaved to: {output_path}\nTime taken: {elapsed:.2f} seconds")
 
     tk.Button(frame, text="Start Transcription", command=on_transcribe).pack(pady=20)

@@ -43,7 +43,7 @@ class SpeakerManagerUI(tk.Frame):
         ext = os.path.splitext(data[0])[1]
         old_path_container = [os.path.join(SPEAKER_DB, f"{data[1]}{ext}")]
         def choose_file():
-            path = filedialog.askopenfilename(filetypes=[("WAV files", "*.wav"), ("Audio", "*.mp3 *.m4a *.ogg")])
+            path = filedialog.askopenfilename(filetypes=[("Audio/Video", "*.mp3 *.wav")])
             if path:
                 path_var.set(path)
         def on_name_change(*args):

@@ -9,6 +9,15 @@ from typing import List, Tuple
 
 SPEAKER_DB = "speaker_db"
 
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """
+    두 벡터 a, b에 대해 코사인 유사도를 계산합니다.
+    (둘 다 L2 정규화된 상태라면 dot(a,b)만 해도 무방합니다.)
+    """
+    a_norm = a / np.linalg.norm(a)
+    b_norm = b / np.linalg.norm(b)
+    return float(np.dot(a_norm, b_norm))
+
 def get_speaker_db(encoder: VoiceEncoder) -> dict:
     """
     speaker_db 디렉토리에 있는 모든 화자 샘플을 임베딩하여 딕셔너리 반환.
@@ -22,18 +31,37 @@ def get_speaker_db(encoder: VoiceEncoder) -> dict:
         speaker_db[file_path.stem] = embed
     return speaker_db
 
-def identify_by_embedding(embed: np.ndarray, speaker_db: dict) -> str:
+def identify_by_embedding(
+    embed: np.ndarray,
+    speaker_db: dict,
+    threshold: float = 0.75
+) -> str:
     """
-    주어진 임베딩을 speaker_db 내 임베딩들과 비교해 가장 유사한 화자 식별
+    주어진 임베딩을 speaker_db 내 임베딩들과 비교해
+    - 최대 코사인 유사도가 threshold 미만이면 "Unknown",
+    - 그 이상이면 가장 유사도가 높은 화자 이름 반환
     """
-    best_match = None
-    best_score = -1
+    # 1) 입력 임베딩도 L2 정규화
+    if np.linalg.norm(embed) > 0:
+        embed_norm = embed / np.linalg.norm(embed)
+    else:
+        return "Unknown"
+
+    best_name = None
+    best_score = -1.0
+
     for name, ref_embed in speaker_db.items():
-        similarity = np.dot(embed, ref_embed)
-        if similarity > best_score:
-            best_score = similarity
-            best_match = name
-    return best_match or "Unknown"
+        # ref_embed는 이미 정규화되어 있다고 가정
+        # (만약 안 되어 있다면 ref_embed /‖ref_embed‖ 처리를 해 주세요)
+        score = cosine_similarity(embed_norm, ref_embed)
+        if score > best_score:
+            best_score = score
+            best_name = name
+
+    # 임계값 아래라면 Unknown 반환
+    if best_score < threshold:
+        return "Unknown"
+    return best_name
 
 def get_speaker_name_and_path() -> List[Tuple[str, str]]:
     """
