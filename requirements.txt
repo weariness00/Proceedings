@@ -8,3 +8,4 @@ torch
 openai
 scikit-learn
 notion-client
+pyannote.audio

@@ -2,7 +2,7 @@ import subprocess
 import sys
 import importlib
 import tkinter as tk
-from Util import *
+from Utils import *
 
 REQUIREMENTS_FILE = "requirements.txt"
 

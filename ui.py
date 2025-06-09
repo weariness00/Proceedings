@@ -1,9 +1,10 @@
 # === ui/main_ui.py ===
+import threading
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 
-from gpt.gpt_define import gpt_env, gpt_output_dir_env
-from gpt.summarizer import summarize_meeting
+from gpt.gpt_define import gpt_env, gpt_output_dir_env, gpt_current_model_env
+from gpt.GPTUtil import GPTUtil
 from whisper_module.transcriber import Transcribe
 from whisper_module.speaker_identifier import *
 from whisper_module.speaker_manager_ui import SpeakerManagerUI
@@ -47,12 +48,14 @@ def menu(window):
 
 
 def set_test_frame(frame):
+    onc_click_frame(frame)
+
     # Whisper 모델 선택
     tk.Label(frame, text="1. Select Whisper model:").pack(pady=5)
-    model_var = tk.StringVar(value= get_env_setting("whisper_module", "current_model"))
+    model_var = tk.StringVar(value= get_env_setting("whisper", "current_model"))
     model_box = ttk.Combobox(frame, textvariable=model_var, values=["tiny", "base", "medium", "large-v2"])
     model_box.pack(pady=5)
-    model_box.bind("<<ComboboxSelected>>", lambda e: set_env_setting("whisper_module", "current_model", model_var.get()))
+    model_box.bind("<<ComboboxSelected>>", lambda e: set_env_setting("whisper", "current_model", model_var.get()))
 
     # 새로운: 화자 수 입력 영역
     tk.Label(frame, text="2. Number of speakers:").pack(pady=5)
@@ -74,12 +77,12 @@ def set_test_frame(frame):
     # 출력 경로 선택
     tk.Label(frame, text="3. Select output folder:").pack(pady=5)
     output_dir_var = tk.StringVar()
-    output_dir_var.set(get_env_setting("whisper_module","save_dir"))
+    output_dir_var.set(get_env_setting("whisper","save_dir"))
 
     def choose_output_folder():
         path = filedialog.askdirectory()
         output_dir_var.set(path)
-        set_env_setting("whisper_module","save_dir", path)
+        set_env_setting("whisper","save_dir", path)
 
     tk.Button(frame, text="Choose Folder", command=choose_output_folder).pack()
     tk.Label(frame, textvariable=output_dir_var, fg="green").pack(pady=5)
@@ -120,7 +123,7 @@ def set_test_frame(frame):
 
         start_time = time.time()
         try:
-            transcribe.model_name = model_var.get()
+            transcribe.model_name = get_env_setting("whisper", "current_model")
             transcribe.speaker_count = num_speakers_var.get()
             results = transcribe.execute(file_var.get(), chunk_length_s=300)
             print("전사 완료")
@@ -168,7 +171,7 @@ def show_open_ai_gui(frame):
             with open(file_path, "r", encoding="utf-8") as f:
                 text_content = f.read()
             # 이제 text_content 변수에 파일의 내용 전체가 문자열로 들어있습니다.
-            raw = summarize_meeting(text_content)
+            raw = GPTUtil.execute(text_content, get_env_setting(gpt_env, gpt_current_model_env))
             # 1) 앞뒤 큰따옴표 제거
             if raw.startswith('"') and raw.endswith('"'):
                 raw = raw[1:-1]
@@ -199,11 +202,104 @@ def show_open_ai_gui(frame):
     tk.Label(frame, textvariable=file_var, fg="blue").pack(pady=5)
     tk.Button(frame, text="Start Summary", command=summary).pack()
 
+def onc_click_frame(frame):
+    # 원클릭으로 대화 전사 및 요약 부터 노션 페이지 생성하여 내용 기재까지
+    tk.Label(frame, text="One Click Start:").pack(pady=5)
 
+    def worker_thread():
+        t = threading.Thread(target=choose_file)
+        t.start()
+        t.daemon = True
+
+    def choose_file():
+        path = filedialog.askopenfilename(filetypes=[("Audio/Video", "*.mp3 *.wav *.mp4")])
+
+        transcribe = Transcribe()
+        progress_label.config(text="🔄 Transcribing... please wait.")
+        frame.update()
+
+        start_time = time.time()
+        try:
+            transcribe.model_name = get_env_setting("whisper", "current_model")
+            transcribe.speaker_count = get_env_setting("whisper", "speaker")
+            results = transcribe.execute(path, chunk_length_s=300)
+            print("전사 완료")
+        except Exception as e:
+            print(e)
+            messagebox.showerror("Error", f"Transcription failed:\n{e}")
+            return
+
+        try:
+            final_output = ""
+            for seg in results:
+                final_output += f"[{seg['speaker']}] {seg['text']}\n"
+
+            base_name = os.path.splitext(os.path.basename(path))[0]
+            output_path = os.path.join(get_env_setting("whisper", "save_dir"), f"{base_name}_transcript.txt")
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(final_output)
+        except Exception as e:
+            print(e)
+            messagebox.showerror("Error", f"Transcription Write failed:\n{e}")
+            return
+
+        progress_label.config(text="")
+        elapsed = time.time() - start_time
+        progress_label.config(text=f"Transcription complete! {elapsed:.2f} seconds")
+        print(f"Transcription complete!\nSaved to: {output_path}\nTime taken: {elapsed:.2f} seconds")
+
+        start_time = time.time()
+        try:
+            with open(output_path, "r", encoding="utf-8") as f:
+                text_content = f.read()
+            # 이제 text_content 변수에 파일의 내용 전체가 문자열로 들어있습니다.
+            raw = GPTUtil.execute(text_content, get_env_setting(gpt_env, gpt_current_model_env))
+            # 1) 앞뒤 큰따옴표 제거
+            if raw.startswith('"') and raw.endswith('"'):
+                raw = raw[1:-1]
+
+            # 2) 이스케이프된 따옴표나 줄바꿈(\n) 같은 걸 실제 JSON 형식으로 바꿔주기
+            json_str = raw.encode('utf-8').decode('unicode_escape')
+
+            base_name = os.path.splitext(os.path.basename(output_path))[0]
+            output_path = os.path.join(get_env_setting(gpt_env, gpt_output_dir_env), f"{base_name}_summary.json")
+            try:
+                json_str = json_str.encode('latin-1').decode('utf-8')
+                with open(output_path, "w", encoding="utf-8") as f:
+                    f.write(json_str)
+            except json.JSONDecodeError as e:
+                print("JSON 파싱 오류:", e)
+                messagebox.showerror("JSON 파싱 오류", f"{e}")
+
+            elapsed = time.time() - start_time
+            progress_label.config(text=f"GPT Summary Complete!\nSaved to: {output_path}\nTime taken: {elapsed:.2f} seconds")
+            print("Done",f"GPT Summary Complete!\nSaved to: {output_path}\nTime taken: {elapsed:.2f} seconds")
+        except Exception as e:
+            messagebox.showerror("오류", f"파일 읽기 중 오류 발생:\n{str(e)}")
+            print("파일 읽기 중 오류 발생:", e)
+
+
+        try:
+            with open(output_path, "r", encoding="utf-8") as f:
+                # 문자열이 아니라 dict 로 바로 읽어옴
+                notion_payload = json.load(f)
+
+            # 이제 notion_payload는 dict 타입이므로 create_page에 그대로 넘길 수 있음
+            NotionDBM.create_page(notion_payload)
+        except Exception as e:
+            messagebox.showerror("오류", f"{str(e)}")
+            print("파일 읽기 중 오류 발생:", e)
+
+        progress_label.config(text=f"Create Page In Notion")
+        print("Done", f"Create Page In Notion")
+
+    tk.Button(frame, text="Browse", command=worker_thread).pack()
+    progress_label = tk.Label(frame, text="")
+    progress_label.pack(pady=5)
 
 def set_speaker_frame(frame):
     speaker_ui = SpeakerManagerUI(frame)
-    for data in get_speaker_name_and_path():
+    for data in SpeakerIdentifier.get_speaker_name_and_path():
         speaker_ui.add_speaker_row(data)
 
 def test(frame):

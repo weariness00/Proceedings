@@ -1,23 +1,23 @@
-from tkinter import messagebox
-from exceptiongroup import catch
 from resemblyzer import VoiceEncoder
 from sklearn.cluster import KMeans
-from whisper_module.speaker_identifier import get_speaker_db, identify_by_embedding
+from whisper_module.speaker_identifier import SpeakerIdentifier
 from typing import List, Dict, Any
 import os
 import math
 import torch
 import torchaudio
+import time
 from pydub import AudioSegment
 from faster_whisper import WhisperModel
-
-SPEAKER_DB = "speaker_db"
+from Hugging_Face.HuggingFaceUtil import HuggingFaceUtil
+from Utils.ffmpeg_util import *
 
 class Transcribe:
     def __init__(self):
         self.model_name = "base"
-        self.speaker_count = 2
         self.model = None
+        self.speaker_count = 2
+        self.speaker_identifier = SpeakerIdentifier()
         pass
 
     def execute(self,
@@ -38,6 +38,8 @@ class Transcribe:
         self.model, device = load_whisper_model(self.model_name)
         model = self.model
 
+        audio_path = ffmpeg_ensure_wav(audio_path)
+
         # 3) 오디오를 chunk 단위로 분리한 파일 경로 리스트 얻기
         chunk_paths = split_audio_to_chunks(audio_path, chunk_length_s)
         if not chunk_paths:
@@ -47,12 +49,14 @@ class Transcribe:
 
         # 4) Resemblyzer용 음성 DB와 encoder 준비
         encoder = VoiceEncoder(device="cpu")
-        speaker_db = get_speaker_db(encoder)
+        self.speaker_identifier.init_speaker_db(encoder)
 
         # 5) 모든 chunk를 처리하며 최종 결과 누적
         final_results: List[Dict[str, Any]] = []
         offset_s = 0.0  # 이전 chunk까지 누적된 시간(초)
 
+        hfu = HuggingFaceUtil()
+        #speaker_count = hfu.counting(audio_path)
         for idx, chunk_path in enumerate(chunk_paths, start=1):
             print(f"--- Chunk {idx}/{len(chunk_paths)} 전사 시작: {chunk_path} (오프셋 {offset_s}s)")
 
@@ -62,6 +66,7 @@ class Transcribe:
             if device == "cuda":
                 torch.cuda.empty_cache()
 
+            start_time = time.time()
             # 5.1) chunk 전사 (로컬 시간)
             segments, _ = model.transcribe(chunk_path)
             segments = list(segments)
@@ -102,13 +107,13 @@ class Transcribe:
 
             # 5.3) 이 chunk 내에서만 KMeans 클러스터링
             print(f"--- Chunk {idx}: 🔀 {len(chunk_embeddings)}개 임베딩으로 KMeans({self.speaker_count}) 실행")
-            kmeans = KMeans(n_clusters=self.speaker_count, random_state=0).fit(chunk_embeddings)
+            kmeans = KMeans(n_clusters= self.speaker_count, random_state=0).fit(chunk_embeddings)
             labels = kmeans.labels_
 
             # 5.4) 클러스터 중심별 화자 이름 매핑
             cluster_to_name: Dict[int, str] = {}
             for cidx, center in enumerate(kmeans.cluster_centers_):
-                name = identify_by_embedding(center, speaker_db, threshold=0.5)
+                name = self.speaker_identifier.execute(center)
                 cluster_to_name[cidx] = name
 
             # 5.5) chunk_segdata와 labels를 결합해 최종 결과에 추가
@@ -124,8 +129,12 @@ class Transcribe:
             chunk_audio = AudioSegment.from_file(chunk_path)
             offset_s += len(chunk_audio) / 1000.0
 
+            elapsed = time.time() - start_time
             print(f"--- Chunk {idx} 완료, 누적 세그먼트 수: {len(final_results)}, offset → {offset_s}s")
+            print(f"--- 걸린 시간 : {elapsed:.2f}")
         print(f"--- Done Transcriber")
+
+        os.remove(audio_path)
 
         # 6) 임시 chunk 파일 삭제
         print("▶ Cleanup 시작: tmp_chunks 삭제 전")  # (A)
@@ -219,7 +228,8 @@ def load_whisper_model(model_size: str):
 
 if __name__ == "__main__":
     path = "meeting.wav"
-    results = transcribe_and_identify(path, model_size="base", num_speakers=2, chunk_length_s=300)
+    transcribe = Transcribe()
+    results = transcribe.execute(path, chunk_length_s=300)
     with open("transcript.txt", "w", encoding="utf-8") as f:
         for seg in results:
             f.write(f"[{seg['speaker']}] {seg['text']}\n")

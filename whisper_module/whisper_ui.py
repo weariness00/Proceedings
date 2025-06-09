@@ -1,15 +1,10 @@
+from tkinter import filedialog, ttk, messagebox
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-from gpt.gpt_define import *
 from env_config import *
-from openai import OpenAI
 
-def show_gpt_settings_ui(parent):
+def show_whisper_setting(parent):
     prompt_text = get_env_setting(gpt_env, gpt_prompt_env)
     api_key = get_env_setting(gpt_env, gpt_token_env)
-    model_key = get_env_setting(gpt_env, gpt_current_model_env)
-
-    client = OpenAI(api_key = api_key)
 
     def on_save():
         api = api_entry.get().strip()
@@ -23,27 +18,18 @@ def show_gpt_settings_ui(parent):
         window.destroy()
 
     window = tk.Toplevel(parent)
-    window.title("GPT 요약 설정")
+    window.title("Whisper 설정")
     window.geometry("600x450")
     window.transient(parent)
     window.attributes('-topmost', True)
     window.lift(parent)
 
-    # Model 선택
-    tk.Label(window, text="🔑 GPT Model").pack(anchor="w", padx=10, pady=(10, 0))
-    model_var = tk.StringVar(value= get_env_setting(gpt_env, gpt_current_model_env))
-    models = ["empty"]
-    try:
-        models = sorted([m.id for m in client.models.list().data])
-    except Exception as e:
-        print(e)
-        models = ["Write Current API Token"]
-    gpt_model_box = ttk.Combobox(window,
-                                textvariable=model_var,
-                                values=models)
-
-    gpt_model_box.pack(pady=5)
-    gpt_model_box.bind("<<ComboboxSelected>>", lambda e: set_env_setting(gpt_env, gpt_current_model_env, model_var.get()))
+    # Whisper 모델 선택
+    tk.Label(window, text="1. Select Whisper model:").pack(pady=5)
+    model_var = tk.StringVar(value= get_env_setting("whisper", "current_model"))
+    model_box = ttk.Combobox(window, textvariable=model_var, values=["tiny", "base", "medium", "large-v2"])
+    model_box.pack(pady=5)
+    model_box.bind("<<ComboboxSelected>>", lambda e: set_env_setting("whisper", "current_model", model_var.get()))
 
 
     # API 키 입력
