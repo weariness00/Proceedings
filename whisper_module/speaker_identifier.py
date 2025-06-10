@@ -6,6 +6,7 @@ import torch
 import os
 import shutil
 from typing import List, Tuple
+from numpy import linalg
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
@@ -20,7 +21,7 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 class SpeakerIdentifier:
     SPEAKER_DB = "speaker_db"
     def __init__(self):
-        self.threshold: float = 0.75
+        self.threshold: float = 0.62
         self.speaker_db = {}
 
     def execute(
@@ -61,9 +62,18 @@ class SpeakerIdentifier:
             dict[str, np.ndarray]: 화자명 -> 임베딩 벡터
         """
         self.speaker_db = {}
+
         for file_path in Path(self.SPEAKER_DB).glob("*.*"):
+            # 1) preprocess_wav → 16kHz mono, VAD, etc.
             wav = preprocess_wav(str(file_path))
+            # 2) 임베딩 추출
             embed = encoder.embed_utterance(wav)
+            # 3) L2 정규화
+
+            norm = linalg.norm(embed)
+
+            if norm > 0:
+                embed = embed / norm
             self.speaker_db[file_path.stem] = embed
 
     def cleanup_speakers(self):
