@@ -21,13 +21,13 @@ class SpeakerManagerUI(tk.Frame):
 
         self.speaker_rows = []
 
-        self.add_button = tk.Button(self, text="＋", fg="purple", command=self.add_speaker_row)
+        self.add_button = tk.Button(self, text="＋", fg="purple", command= self.add_speaker_row)
         self.add_button.pack(side="left", padx=5, pady=5)
 
         self.remove_button = tk.Button(self, text="－", command=self.remove_last_row)
         self.remove_button.pack(side="left", padx=5, pady=5)
 
-    def add_speaker_row(self, data:Tuple[str, str]):
+    def add_speaker_row(self, data:Tuple[str, str] = ("", "")):
         row_frame = tk.Frame(self.list_frame)
         row_frame.pack(fill="x", pady=2)
 
@@ -46,6 +46,7 @@ class SpeakerManagerUI(tk.Frame):
             path = filedialog.askopenfilename(filetypes=[("Audio/Video", "*.mp3 *.wav")])
             if path:
                 path_var.set(path)
+                self.save_all_speakers()
         def on_name_change(*args):
             new_name = name_var.get().strip()
             if not new_name:
@@ -82,6 +83,10 @@ class SpeakerManagerUI(tk.Frame):
                 continue
             try:
                 dest = os.path.join(SPEAKER_DB, f"{name}{os.path.splitext(path)[1]}")
+
+                # 소스와 대상이 같으면 복사하지 않음
+                if os.path.abspath(path) == os.path.abspath(dest):
+                    continue
                 shutil.copy(path, dest)
             except Exception as e:
                 messagebox.showerror("Error", f"{name}: 복사 실패\n{e}")
